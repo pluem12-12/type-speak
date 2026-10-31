@@ -16,12 +16,15 @@ export interface WordItem {
   target: string;
   typed: string;
   skippedWithMissed: number;
+  sentenceIdx?: number;
+  sentenceFullText?: string;
 }
 
 interface TypingState {
   status: TestStatus;
   words: WordItem[];
   currentSentenceText: string;
+  totalSentences: number;
   wi: number; // current word/clause index
   ci: number; // current char index within words[wi]
   correctChars: number;
@@ -42,7 +45,7 @@ interface TypingState {
     mode: PracticeMode,
     wordOpt: WordOption,
     sentenceLength?: SentenceLength,
-    customSentenceText?: string
+    sentenceCount?: number
   ) => void;
   typeChar: (
     char: string,
@@ -80,47 +83,57 @@ function pickRandomWords(lang: Language, count: number): WordItem[] {
   return result;
 }
 
-function pickSentenceByOptions(
+function pickSentencesByOptions(
   lang: Language,
   sentenceLength: SentenceLength,
-  customSentenceText?: string,
-  excludeSentence?: string
-): { words: WordItem[]; sentenceText: string } {
-  let sentence = "";
+  sentenceCount: number,
+  excludeFirstSentence?: string
+): { words: WordItem[]; sentenceText: string; totalSentences: number } {
+  const pool =
+    lang === "th-TH"
+      ? thSentencesByLength[sentenceLength]
+      : enSentencesByLength[sentenceLength];
 
-  if (sentenceLength === "custom" && customSentenceText?.trim()) {
-    sentence = customSentenceText.trim().replace(/\s+/g, " ");
-  } else {
-    const lengthKey: "short" | "medium" | "long" =
-      sentenceLength === "short" ||
-      sentenceLength === "medium" ||
-      sentenceLength === "long"
-        ? sentenceLength
-        : "medium";
-    const pool =
-      lang === "th-TH"
-        ? thSentencesByLength[lengthKey]
-        : enSentencesByLength[lengthKey];
+  const count = Math.max(1, Math.min(50, sentenceCount));
+  const pickedSentences: string[] = [];
+  let prevSentence = excludeFirstSentence || "";
 
-    sentence = pool[Math.floor(Math.random() * pool.length)].trim();
-    if (pool.length > 1 && sentence === excludeSentence) {
-      sentence = pool[(pool.indexOf(sentence) + 1) % pool.length].trim();
+  for (let i = 0; i < count; i++) {
+    let candidate = pool[Math.floor(Math.random() * pool.length)].trim();
+    if (pool.length > 1 && candidate === prevSentence) {
+      candidate =
+        pool[(pool.indexOf(candidate) + 1) % pool.length].trim();
     }
+    prevSentence = candidate;
+    pickedSentences.push(candidate);
   }
 
-  // Split by grammatical spaces so each clause/word is typed continuously and separated by Spacebar
-  const splitWords = sentence.split(/\s+/).map((w) => ({
-    target: w,
-    typed: "",
-    skippedWithMissed: 0,
-  }));
-  return { words: splitWords, sentenceText: sentence };
+  const allWords: WordItem[] = [];
+  pickedSentences.forEach((sentence, sIdx) => {
+    const clauses = sentence.split(/\s+/).filter(Boolean);
+    clauses.forEach((clause) => {
+      allWords.push({
+        target: clause,
+        typed: "",
+        skippedWithMissed: 0,
+        sentenceIdx: sIdx,
+        sentenceFullText: sentence,
+      });
+    });
+  });
+
+  return {
+    words: allWords,
+    sentenceText: pickedSentences.join(" "),
+    totalSentences: count,
+  };
 }
 
 export const useTypingStore = create<TypingState>((set, get) => ({
   status: "idle",
   words: [],
   currentSentenceText: "",
+  totalSentences: 1,
   wi: 0,
   ci: 0,
   correctChars: 0,
@@ -141,30 +154,34 @@ export const useTypingStore = create<TypingState>((set, get) => ({
     mode,
     wordOpt,
     sentenceLength = "medium",
-    customSentenceText
+    sentenceCount = 1
   ) => {
     let words: WordItem[] = [];
     let currentSentenceText = "";
+    let totalSentences = 1;
 
     if (mode === "time") {
       words = pickRandomWords(lang, 70);
     } else if (mode === "words") {
       words = pickRandomWords(lang, wordOpt);
     } else {
-      const picked = pickSentenceByOptions(
+      const firstPrevSentence = get().words[0]?.sentenceFullText;
+      const picked = pickSentencesByOptions(
         lang,
         sentenceLength,
-        customSentenceText,
-        get().currentSentenceText
+        sentenceCount,
+        firstPrevSentence
       );
       words = picked.words;
       currentSentenceText = picked.sentenceText;
+      totalSentences = picked.totalSentences;
     }
 
     set((state) => ({
       status: "idle",
       words,
       currentSentenceText,
+      totalSentences,
       wi: 0,
       ci: 0,
       correctChars: 0,

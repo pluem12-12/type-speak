@@ -67,7 +67,7 @@ export default function HomePage() {
           ) : (
             <Results
               onRestart={restartTest}
-              onReplay={replayCurrent}
+              onReplay={() => replayCurrent()}
               supported={supported}
             />
           )}
@@ -99,7 +99,7 @@ export default function HomePage() {
           <div className="flex items-center gap-1.5">
             <Info className="h-3.5 w-3.5 text-mt-accent" />
             <span>
-              แนะนำให้ใช้ Google Chrome หรือ Microsoft Edge เพื่อเสียงภาษาไทยที่ครบถ้วน
+              รองรับทั้งเสียง Cloud AI และเสียงในระบบ (Web Speech API)
             </span>
           </div>
         </footer>

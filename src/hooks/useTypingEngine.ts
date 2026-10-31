@@ -4,9 +4,15 @@ import { useEffect, useRef, useCallback } from "react";
 import { useTypingStore } from "@/store/useTypingStore";
 import { useSettingsStore, getScoreKey } from "@/store/useSettingsStore";
 import { calculateWpm, calculateAccuracy } from "@/lib/stats";
+import { Language } from "@/lib/constants";
 
 interface UseTypingEngineProps {
-  speak: (text: string, forceLang?: "en-US" | "th-TH", bypassToggle?: boolean) => void;
+  speak: (
+    text: string,
+    forceLang?: Language,
+    bypassToggle?: boolean,
+    overrideVoiceId?: string
+  ) => void;
   cancelSpeech: () => void;
   hiddenInputRef: React.RefObject<HTMLInputElement>;
 }
@@ -22,7 +28,7 @@ export function useTypingEngine({
     timeOpt,
     wordOpt,
     sentenceLength,
-    activeCustomSentence,
+    sentenceCount,
     ttsOn,
     hydrated,
     hydrateFromStorage,
@@ -47,18 +53,20 @@ export function useTypingEngine({
   } = useTypingStore();
 
   const tabPressedRef = useRef<boolean>(false);
-  const currentCustomText = activeCustomSentence[lang] || "";
+  const userInteractedRef = useRef<boolean>(false);
+  const spokeInitialRef = useRef<boolean>(false);
 
   // Hydrate persistent settings on mount
   useEffect(() => {
     hydrateFromStorage();
   }, [hydrateFromStorage]);
 
-  // Initialize test whenever mode, language, word count, sentence length, or custom sentence changes
+  // Initialize test whenever mode, language, word count, sentence length, or sentence count changes
   useEffect(() => {
     if (!hydrated) return;
+    spokeInitialRef.current = false;
     cancelSpeech();
-    initTest(lang, mode, wordOpt, sentenceLength, currentCustomText);
+    initTest(lang, mode, wordOpt, sentenceLength, sentenceCount);
   }, [
     hydrated,
     lang,
@@ -66,7 +74,7 @@ export function useTypingEngine({
     timeOpt,
     wordOpt,
     sentenceLength,
-    currentCustomText,
+    sentenceCount,
     initTest,
     cancelSpeech,
   ]);
@@ -80,13 +88,18 @@ export function useTypingEngine({
     const timer = setTimeout(() => {
       const latest = useTypingStore.getState();
       if (latest.status === "finished" || latest.words.length === 0) return;
+      if (userInteractedRef.current) {
+        spokeInitialRef.current = true;
+      }
       if (mode === "sentence") {
-        speak(latest.currentSentenceText, lang);
+        const firstSentence =
+          latest.words[0]?.sentenceFullText || latest.currentSentenceText;
+        if (firstSentence) speak(firstSentence, lang);
       } else {
         const firstWord = latest.words[0]?.target;
         if (firstWord) speak(firstWord, lang);
       }
-    }, 120);
+    }, 100);
 
     return () => clearTimeout(timer);
   }, [hydrated, restartVersion, mode, lang, ttsOn, speak]);
@@ -96,7 +109,14 @@ export function useTypingEngine({
     if (status !== "finished") return;
     const wpm = calculateWpm(correctChars, elapsedMs);
     const acc = calculateAccuracy(correctChars, incorrectChars, extraChars);
-    const scoreKey = getScoreKey(lang, mode, timeOpt, wordOpt, sentenceLength);
+    const scoreKey = getScoreKey(
+      lang,
+      mode,
+      timeOpt,
+      wordOpt,
+      sentenceLength,
+      sentenceCount
+    );
     updateBestScore(scoreKey, wpm, acc);
   }, [
     status,
@@ -109,12 +129,15 @@ export function useTypingEngine({
     timeOpt,
     wordOpt,
     sentenceLength,
+    sentenceCount,
     updateBestScore,
   ]);
 
   const restartTest = useCallback(() => {
+    userInteractedRef.current = true;
+    spokeInitialRef.current = false;
     cancelSpeech();
-    initTest(lang, mode, wordOpt, sentenceLength, currentCustomText);
+    initTest(lang, mode, wordOpt, sentenceLength, sentenceCount);
     setTimeout(() => {
       hiddenInputRef.current?.focus();
     }, 10);
@@ -125,27 +148,40 @@ export function useTypingEngine({
     mode,
     wordOpt,
     sentenceLength,
-    currentCustomText,
+    sentenceCount,
     hiddenInputRef,
   ]);
 
-  const replayCurrent = useCallback(() => {
-    const state = useTypingStore.getState();
-    if (state.words.length === 0) return;
-    if (mode === "sentence") {
-      speak(state.currentSentenceText, lang, true);
-    } else {
-      const currentWord = state.words[state.wi]?.target;
-      if (currentWord) {
-        speak(currentWord, lang, true);
+  const replayCurrent = useCallback(
+    (overrideVoiceId?: string) => {
+      userInteractedRef.current = true;
+      spokeInitialRef.current = true;
+      const state = useTypingStore.getState();
+      if (state.words.length === 0) return;
+      if (mode === "sentence") {
+        const activeSentence =
+          state.words[state.wi]?.sentenceFullText || state.currentSentenceText;
+        speak(activeSentence, lang, true, overrideVoiceId);
+      } else {
+        const currentWord = state.words[state.wi]?.target;
+        if (currentWord) {
+          speak(currentWord, lang, true, overrideVoiceId);
+        }
       }
-    }
-    hiddenInputRef.current?.focus();
-  }, [mode, lang, speak, hiddenInputRef]);
+      hiddenInputRef.current?.focus();
+    },
+    [mode, lang, speak, hiddenInputRef]
+  );
 
-  // Global document keydown listener
+  // Global document keydown & click listener for user interaction & typing
   useEffect(() => {
+    const handlePointerDown = () => {
+      userInteractedRef.current = true;
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      userInteractedRef.current = true;
+
       // Never preventDefault on modifier combinations (Ctrl / Cmd / Alt)
       if (e.ctrlKey || e.metaKey || e.altKey) {
         return;
@@ -156,7 +192,8 @@ export function useTypingEngine({
       if (
         activeTag === "select" ||
         activeTag === "textarea" ||
-        (activeTag === "input" && document.activeElement !== hiddenInputRef.current)
+        (activeTag === "input" &&
+          document.activeElement !== hiddenInputRef.current)
       ) {
         return;
       }
@@ -197,11 +234,24 @@ export function useTypingEngine({
       if (e.key === " ") {
         e.preventDefault();
         setFocused(true);
+        const prevSentenceIdx = currentState.words[currentState.wi]?.sentenceIdx;
         const { wordChanged } = nextWord(mode, lang);
-        if (wordChanged && mode !== "sentence") {
+        if (wordChanged) {
           const updated = useTypingStore.getState();
-          const wordToSpeak = updated.words[updated.wi]?.target;
-          if (wordToSpeak) speak(wordToSpeak, lang);
+          const nextItem = updated.words[updated.wi];
+          if (mode === "sentence") {
+            // If entering a new sentence, read the full new sentence; otherwise read the next clause
+            if (
+              nextItem?.sentenceIdx !== prevSentenceIdx &&
+              nextItem?.sentenceFullText
+            ) {
+              speak(nextItem.sentenceFullText, lang);
+            } else if (nextItem?.target) {
+              speak(nextItem.target, lang);
+            }
+          } else if (nextItem?.target) {
+            speak(nextItem.target, lang);
+          }
         }
         return;
       }
@@ -210,6 +260,26 @@ export function useTypingEngine({
       if (e.key.length === 1) {
         e.preventDefault();
         setFocused(true);
+
+        // If browser blocked initial autoplay on page load, speak the first word/sentence on first keystroke
+        if (
+          currentState.status === "idle" &&
+          currentState.wi === 0 &&
+          currentState.ci === 0 &&
+          !spokeInitialRef.current
+        ) {
+          spokeInitialRef.current = true;
+          if (mode === "sentence") {
+            const firstSentence =
+              currentState.words[0]?.sentenceFullText ||
+              currentState.currentSentenceText;
+            if (firstSentence) speak(firstSentence, lang);
+          } else {
+            const firstWord = currentState.words[0]?.target;
+            if (firstWord) speak(firstWord, lang);
+          }
+        }
+
         typeChar(e.key, mode, lang);
       }
     };
@@ -220,9 +290,11 @@ export function useTypingEngine({
       }
     };
 
+    document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     document.addEventListener("keyup", handleKeyUp);
     return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
       document.removeEventListener("keyup", handleKeyUp);
     };

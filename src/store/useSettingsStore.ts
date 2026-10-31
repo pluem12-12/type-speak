@@ -9,6 +9,7 @@ import {
   THEMES,
   TIME_LIMITS,
   WORD_LIMITS,
+  SENTENCE_COUNT_LIMITS,
   STORAGE_KEYS,
 } from "@/lib/constants";
 
@@ -22,8 +23,7 @@ interface PersistedTtsSettings {
   timeOpt: number;
   wordOpt: number;
   sentenceLength: SentenceLength;
-  customSentences: Record<Language, string[]>;
-  activeCustomSentence: Record<Language, string>;
+  sentenceCount: number;
 }
 
 interface BestScoresMap {
@@ -34,17 +34,6 @@ interface BestScoresMap {
   };
 }
 
-const DEFAULT_CUSTOM_SENTENCES: Record<Language, string[]> = {
-  "th-TH": [
-    "เป้าหมายของฉันในเทอมนี้ คือการฝึกพิมพ์และพูดภาษาอังกฤษให้คล่องแคล่ว",
-    "การอ่านทบทวนบทเรียนวันละนิด ช่วยให้เข้าใจเนื้อหาได้ลึกซึ้งกว่าเดิม",
-  ],
-  "en-US": [
-    "My goal this semester is to type faster and speak English with confidence.",
-    "Consistent daily practice is the secret to mastering any new skill.",
-  ],
-};
-
 interface SettingsState {
   theme: ThemeId;
   lang: Language;
@@ -52,8 +41,7 @@ interface SettingsState {
   timeOpt: TimeOption;
   wordOpt: WordOption;
   sentenceLength: SentenceLength;
-  customSentences: Record<Language, string[]>;
-  activeCustomSentence: Record<Language, string>;
+  sentenceCount: number;
   ttsOn: boolean;
   voiceMap: Record<Language, string>;
   rate: number;
@@ -68,9 +56,7 @@ interface SettingsState {
   setTimeOpt: (timeOpt: TimeOption) => void;
   setWordOpt: (wordOpt: WordOption) => void;
   setSentenceLength: (sentenceLength: SentenceLength) => void;
-  setActiveCustomSentence: (lang: Language, sentence: string) => void;
-  addCustomSentence: (lang: Language, sentence: string) => void;
-  removeCustomSentence: (lang: Language, index: number) => void;
+  setSentenceCount: (sentenceCount: number) => void;
   setTtsOn: (ttsOn: boolean) => void;
   setVoiceForLang: (lang: Language, voiceURI: string) => void;
   setRate: (rate: number) => void;
@@ -96,8 +82,7 @@ function saveSettings(state: {
   timeOpt: number;
   wordOpt: number;
   sentenceLength: SentenceLength;
-  customSentences: Record<Language, string[]>;
-  activeCustomSentence: Record<Language, string>;
+  sentenceCount: number;
 }) {
   if (typeof window === "undefined") return;
   try {
@@ -111,8 +96,7 @@ function saveSettings(state: {
       timeOpt: state.timeOpt,
       wordOpt: state.wordOpt,
       sentenceLength: state.sentenceLength,
-      customSentences: state.customSentences,
-      activeCustomSentence: state.activeCustomSentence,
+      sentenceCount: state.sentenceCount,
     };
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(payload));
   } catch {
@@ -127,11 +111,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   timeOpt: 30,
   wordOpt: 25,
   sentenceLength: "medium",
-  customSentences: DEFAULT_CUSTOM_SENTENCES,
-  activeCustomSentence: {
-    "th-TH": DEFAULT_CUSTOM_SENTENCES["th-TH"][0],
-    "en-US": DEFAULT_CUSTOM_SENTENCES["en-US"][0],
-  },
+  sentenceCount: 1,
   ttsOn: true,
   voiceMap: {
     "en-US": "",
@@ -175,75 +155,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     saveSettings({ ...get(), sentenceLength });
   },
 
-  setActiveCustomSentence: (lang, sentence) => {
-    const trimmed = sentence.trim().replace(/\s+/g, " ");
-    if (!trimmed) return;
-    const nextActive = {
-      ...get().activeCustomSentence,
-      [lang]: trimmed,
-    };
-    set({ activeCustomSentence: nextActive, sentenceLength: "custom" });
-    saveSettings({
-      ...get(),
-      activeCustomSentence: nextActive,
-      sentenceLength: "custom",
-    });
-  },
-
-  addCustomSentence: (lang, sentence) => {
-    const trimmed = sentence.trim().replace(/\s+/g, " ");
-    if (!trimmed) return;
-    const existing = get().customSentences[lang] || [];
-    const nextList = existing.includes(trimmed)
-      ? existing
-      : [trimmed, ...existing];
-    const nextCustom = {
-      ...get().customSentences,
-      [lang]: nextList,
-    };
-    const nextActive = {
-      ...get().activeCustomSentence,
-      [lang]: trimmed,
-    };
-    set({
-      customSentences: nextCustom,
-      activeCustomSentence: nextActive,
-      sentenceLength: "custom",
-    });
-    saveSettings({
-      ...get(),
-      customSentences: nextCustom,
-      activeCustomSentence: nextActive,
-      sentenceLength: "custom",
-    });
-  },
-
-  removeCustomSentence: (lang, index) => {
-    const existing = get().customSentences[lang] || [];
-    const nextList = existing.filter((_, idx) => idx !== index);
-    const fallbackList =
-      nextList.length > 0 ? nextList : DEFAULT_CUSTOM_SENTENCES[lang];
-    const nextCustom = {
-      ...get().customSentences,
-      [lang]: fallbackList,
-    };
-    const currentActive = get().activeCustomSentence[lang];
-    const nextActiveText = fallbackList.includes(currentActive)
-      ? currentActive
-      : fallbackList[0];
-    const nextActive = {
-      ...get().activeCustomSentence,
-      [lang]: nextActiveText,
-    };
-    set({
-      customSentences: nextCustom,
-      activeCustomSentence: nextActive,
-    });
-    saveSettings({
-      ...get(),
-      customSentences: nextCustom,
-      activeCustomSentence: nextActive,
-    });
+  setSentenceCount: (sentenceCount) => {
+    const clamped = Math.max(
+      SENTENCE_COUNT_LIMITS.MIN,
+      Math.min(SENTENCE_COUNT_LIMITS.MAX, Math.round(sentenceCount))
+    );
+    set({ sentenceCount: clamped });
+    saveSettings({ ...get(), sentenceCount: clamped });
   },
 
   setTtsOn: (ttsOn) => {
@@ -321,8 +239,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         const validSentenceLength: SentenceLength =
           parsed.sentenceLength === "short" ||
           parsed.sentenceLength === "medium" ||
-          parsed.sentenceLength === "long" ||
-          parsed.sentenceLength === "custom"
+          parsed.sentenceLength === "long"
             ? parsed.sentenceLength
             : "medium";
 
@@ -363,26 +280,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
               ? parsed.wordOpt
               : state.wordOpt,
           sentenceLength: validSentenceLength,
-          customSentences: parsed.customSentences
-            ? {
-                "th-TH":
-                  Array.isArray(parsed.customSentences["th-TH"]) &&
-                  parsed.customSentences["th-TH"].length > 0
-                    ? parsed.customSentences["th-TH"]
-                    : state.customSentences["th-TH"],
-                "en-US":
-                  Array.isArray(parsed.customSentences["en-US"]) &&
-                  parsed.customSentences["en-US"].length > 0
-                    ? parsed.customSentences["en-US"]
-                    : state.customSentences["en-US"],
-              }
-            : state.customSentences,
-          activeCustomSentence: parsed.activeCustomSentence
-            ? {
-                ...state.activeCustomSentence,
-                ...parsed.activeCustomSentence,
-              }
-            : state.activeCustomSentence,
+          sentenceCount:
+            typeof parsed.sentenceCount === "number" &&
+            parsed.sentenceCount >= SENTENCE_COUNT_LIMITS.MIN &&
+            parsed.sentenceCount <= SENTENCE_COUNT_LIMITS.MAX
+              ? Math.round(parsed.sentenceCount)
+              : state.sentenceCount,
         }));
       } else {
         applyDocumentTheme("neon-pop");
@@ -408,9 +311,10 @@ export function getScoreKey(
   mode: PracticeMode,
   timeOpt: TimeOption,
   wordOpt: WordOption,
-  sentenceLength: SentenceLength = "medium"
+  sentenceLength: SentenceLength = "medium",
+  sentenceCount: number = 1
 ): string {
   if (mode === "time") return `${lang}_time_${timeOpt}`;
   if (mode === "words") return `${lang}_words_${wordOpt}`;
-  return `${lang}_sentence_${sentenceLength}`;
+  return `${lang}_sentence_${sentenceLength}_${sentenceCount}`;
 }

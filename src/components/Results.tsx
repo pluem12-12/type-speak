@@ -80,33 +80,45 @@ export function Results({ onRestart, onReplay, supported }: ResultsProps) {
     currentSentenceText,
   } = useTypingStore();
 
-  const { lang, mode, timeOpt, wordOpt, sentenceLength, bestScores } =
-    useSettingsStore();
+  const {
+    lang,
+    mode,
+    timeOpt,
+    wordOpt,
+    sentenceLength,
+    sentenceCount,
+    bestScores,
+  } = useSettingsStore();
 
   const wpm = calculateWpm(correctChars, elapsedMs);
   const rawWpm = calculateRawWpm(totalTyped, elapsedMs);
   const accuracy = calculateAccuracy(correctChars, incorrectChars, extraChars);
   const consistency = calculateConsistency(wpmSamples);
 
-  const scoreKey = getScoreKey(lang, mode, timeOpt, wordOpt, sentenceLength);
+  const scoreKey = getScoreKey(
+    lang,
+    mode,
+    timeOpt,
+    wordOpt,
+    sentenceLength,
+    sentenceCount
+  );
   const bestScore = bestScores[scoreKey];
   const rank = getStudentRank(wpm, accuracy);
 
   const sentenceLengthLabel =
     sentenceLength === "short"
-      ? "ความยาวสั้น"
+      ? "สั้น"
       : sentenceLength === "medium"
-      ? "ความยาวปานกลาง"
-      : sentenceLength === "long"
-      ? "ความยาวยาว"
-      : "ประโยคกำหนดเอง";
+      ? "กลาง"
+      : "ยาว";
 
   const modeLabel =
     mode === "time"
       ? `โหมดเวลา ${timeOpt} วินาที`
       : mode === "words"
       ? `โหมดจำนวนคำ ${wordOpt} คำ`
-      : `โหมดฝึกประโยค (${sentenceLengthLabel})`;
+      : `โหมดฝึกประโยค (${sentenceLengthLabel} • ${sentenceCount} ประโยค)`;
 
   // TODO: เพิ่มกราฟแสดงความก้าวหน้าตามเวลา (recharts)
   return (
@@ -240,7 +252,7 @@ export function Results({ onRestart, onReplay, supported }: ResultsProps) {
             className="flex items-center gap-1.5 rounded-lg bg-mt-accent px-3.5 py-1.5 text-xs font-bold text-mt-bg transition-transform hover:scale-105 disabled:opacity-40"
           >
             <Volume2 className="h-4 w-4" />
-            <span>ฟังประโยคนี้ซ้ำ</span>
+            <span>ฟังประโยคซ้ำ</span>
           </button>
         </div>
       )}

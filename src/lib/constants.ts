@@ -1,6 +1,6 @@
 export type Language = "en-US" | "th-TH";
 export type PracticeMode = "time" | "words" | "sentence";
-export type SentenceLength = "short" | "medium" | "long" | "custom";
+export type SentenceLength = "short" | "medium" | "long";
 
 export type ThemeId =
   | "neon-pop"
@@ -75,11 +75,6 @@ export const SENTENCE_LENGTH_OPTS: {
     label: "ยาว (Long)",
     desc: "ประโยคยาวหลายวรรค ฝึกความต่อเนื่องและสมาธิ",
   },
-  {
-    id: "custom",
-    label: "ปรับแต่งเอง (Custom)",
-    desc: "พิมพ์หรือเพิ่มประโยคที่ต้องการฝึกด้วยตัวเอง",
-  },
 ];
 
 export const TIME_OPTS = [15, 30, 60, 120] as const;
@@ -96,6 +91,11 @@ export const TIME_LIMITS = {
 export const WORD_LIMITS = {
   MIN: 1,
   MAX: 500,
+} as const;
+
+export const SENTENCE_COUNT_LIMITS = {
+  MIN: 1,
+  MAX: 50,
 } as const;
 
 export const RATE_PRESETS = [

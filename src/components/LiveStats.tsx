@@ -16,6 +16,7 @@ export function LiveStats({ onSpeakWord }: LiveStatsProps) {
     wi,
     words,
     currentSentenceText,
+    totalSentences,
     correctChars,
     incorrectChars,
     extraChars,
@@ -41,6 +42,13 @@ export function LiveStats({ onSpeakWord }: LiveStatsProps) {
       status === "idle"
         ? 0
         : Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
+  } else if (mode === "sentence") {
+    const currentSentenceNum = (words[wi]?.sentenceIdx ?? 0) + 1;
+    primaryCounter = `${currentSentenceNum}/${totalSentences}`;
+    progressPercent =
+      words.length > 0
+        ? Math.min(100, Math.round((wi / words.length) * 100))
+        : 0;
   } else {
     primaryCounter = `${wi}/${words.length}`;
     progressPercent =
@@ -51,7 +59,7 @@ export function LiveStats({ onSpeakWord }: LiveStatsProps) {
 
   const spotlightText =
     mode === "sentence"
-      ? currentSentenceText
+      ? words[wi]?.sentenceFullText || currentSentenceText
       : words[wi]?.target ?? "";
 
   return (
@@ -60,7 +68,7 @@ export function LiveStats({ onSpeakWord }: LiveStatsProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Left: Colorful Stat Badges */}
         <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-          {/* Timer / Word Counter Pill */}
+          {/* Timer / Word / Sentence Counter Pill */}
           <div className="flex items-center gap-2.5 rounded-xl border border-mt-accent/30 bg-mt-panel px-3.5 py-2 shadow-sm">
             <Timer className="h-5 w-5 text-mt-accent" />
             <div>
@@ -68,7 +76,7 @@ export function LiveStats({ onSpeakWord }: LiveStatsProps) {
                 {mode === "time"
                   ? "เวลาที่เหลือ"
                   : mode === "sentence"
-                  ? "วรรคที่พิมพ์"
+                  ? "ประโยคที่พิมพ์"
                   : "คำที่พิมพ์"}
               </div>
               <div className="font-mono text-xl font-extrabold leading-tight text-mt-accent sm:text-2xl">

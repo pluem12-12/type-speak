@@ -1,13 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Clock,
   Type,
   MessageSquareQuote,
   Volume2,
   VolumeX,
-  AlertTriangle,
   SkipForward,
   Gauge,
   SlidersHorizontal,
@@ -15,9 +14,6 @@ import {
   Plus,
   Sparkles,
   Check,
-  PenLine,
-  Trash2,
-  BookmarkPlus,
 } from "lucide-react";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import {
@@ -25,6 +21,7 @@ import {
   WORD_OPTS,
   TIME_LIMITS,
   WORD_LIMITS,
+  SENTENCE_COUNT_LIMITS,
   RATE_PRESETS,
   SENTENCE_LENGTH_OPTS,
   PracticeMode,
@@ -37,7 +34,7 @@ interface SettingsPanelProps {
   supported: boolean;
   voiceModels: VoiceModelOption[];
   missingThaiVoice: boolean;
-  onReplay: () => void;
+  onReplay: (overrideVoiceId?: string) => void;
   onNextSentence: () => void;
 }
 
@@ -54,8 +51,7 @@ export function SettingsPanel({
     timeOpt,
     wordOpt,
     sentenceLength,
-    customSentences,
-    activeCustomSentence,
+    sentenceCount,
     ttsOn,
     voiceMap,
     rate,
@@ -65,9 +61,7 @@ export function SettingsPanel({
     setTimeOpt,
     setWordOpt,
     setSentenceLength,
-    setActiveCustomSentence,
-    addCustomSentence,
-    removeCustomSentence,
+    setSentenceCount,
     setTtsOn,
     setVoiceForLang,
     setRate,
@@ -81,15 +75,12 @@ export function SettingsPanel({
   const [showCustomWords, setShowCustomWords] = useState(false);
   const [customWordsInput, setCustomWordsInput] = useState(String(wordOpt));
 
-  const [customSentenceDraft, setCustomSentenceDraft] = useState(
-    activeCustomSentence[lang] || ""
+  const [showCustomSentences, setShowCustomSentences] = useState(false);
+  const [customSentenceCountInput, setCustomSentenceCountInput] = useState(
+    String(sentenceCount)
   );
-  const [showAdvancedTts, setShowAdvancedTts] = useState(false);
 
-  // Sync draft when language or active custom sentence changes
-  useEffect(() => {
-    setCustomSentenceDraft(activeCustomSentence[lang] || "");
-  }, [lang, activeCustomSentence]);
+  const [showAdvancedTts, setShowAdvancedTts] = useState(false);
 
   const modes: { id: PracticeMode; label: string; icon: React.ReactNode }[] = [
     { id: "time", label: "เวลา (Time)", icon: <Clock className="h-3.5 w-3.5" /> },
@@ -104,7 +95,6 @@ export function SettingsPanel({
   const selectedVoiceId = voiceMap[lang] || "";
   const isCustomTimeActive = !(TIME_OPTS as readonly number[]).includes(timeOpt);
   const isCustomWordActive = !(WORD_OPTS as readonly number[]).includes(wordOpt);
-  const savedCustomList = customSentences[lang] || [];
 
   const applyCustomTime = () => {
     const parsed = parseInt(customTimeInput, 10);
@@ -122,32 +112,29 @@ export function SettingsPanel({
     setShowCustomWords(false);
   };
 
-  const handleUseCustomSentence = () => {
-    const trimmed = customSentenceDraft.trim();
-    if (!trimmed) return;
-    setActiveCustomSentence(lang, trimmed);
-  };
-
-  const handleSaveCustomSentence = () => {
-    const trimmed = customSentenceDraft.trim();
-    if (!trimmed) return;
-    addCustomSentence(lang, trimmed);
-  };
-
-  const handleNextSentenceClick = () => {
-    if (sentenceLength === "custom" && savedCustomList.length > 1) {
-      const currentIdx = savedCustomList.indexOf(activeCustomSentence[lang]);
-      const nextIdx = (currentIdx + 1) % savedCustomList.length;
-      setActiveCustomSentence(lang, savedCustomList[nextIdx]);
-    } else {
-      onNextSentence();
+  const applyCustomSentenceCount = () => {
+    const parsed = parseInt(customSentenceCountInput, 10);
+    if (!isNaN(parsed)) {
+      setSentenceCount(parsed);
     }
+    setShowCustomSentences(false);
   };
+
+  const handleVoiceModelChange = (nextVoiceId: string) => {
+    setVoiceForLang(lang, nextVoiceId);
+    onReplay(nextVoiceId);
+  };
+
+  const cloudModels = voiceModels.filter((m) => m.isCloudModel);
+  const systemModels = voiceModels.filter((m) => !m.isSyntheticPreset);
+  const tonePresetModels = voiceModels.filter(
+    (m) => m.isSyntheticPreset && !m.isCloudModel
+  );
 
   return (
     <section className="flex flex-col gap-2.5">
       <div className="flex flex-col gap-3 rounded-xl bg-mt-panel px-4 py-3 text-xs sm:text-sm">
-        {/* Row 1: Mode, Time/Word/Sentence Length Options, and Main TTS Controls */}
+        {/* Row 1: Mode, Time/Word/Sentence Length & Count Options, and Main TTS Controls */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Left: Practice Modes & Mode Options */}
           <div className="flex flex-wrap items-center gap-2">
@@ -307,38 +294,87 @@ export function SettingsPanel({
               </div>
             )}
 
-            {/* Sentence Mode Options: Short / Medium / Long / Custom + Next Sentence */}
+            {/* Sentence Mode Options: Short / Medium / Long + Custom Sentence Count (Number Input) */}
             {mode === "sentence" && (
               <div className="flex flex-wrap items-center gap-1">
-                {SENTENCE_LENGTH_OPTS.map((opt: { id: SentenceLength; label: string; desc: string }) => {
-                  const isActive = sentenceLength === opt.id;
-                  return (
+                {SENTENCE_LENGTH_OPTS.map(
+                  (opt: { id: SentenceLength; label: string; desc: string }) => {
+                    const isActive = sentenceLength === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setSentenceLength(opt.id)}
+                        title={opt.desc}
+                        className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                          isActive
+                            ? "bg-mt-bg/60 font-bold text-mt-accent"
+                            : "text-mt-muted hover:text-mt-text"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  }
+                )}
+
+                {/* Custom Number of Sentences Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomSentenceCountInput(String(sentenceCount));
+                    setShowCustomSentences(!showCustomSentences);
+                  }}
+                  className={`flex items-center gap-1 rounded-md px-2.5 py-1 font-mono text-xs transition-colors ${
+                    sentenceCount > 1 || showCustomSentences
+                      ? "bg-mt-bg/60 font-bold text-mt-accent ring-1 ring-mt-accent/40"
+                      : "text-mt-muted hover:text-mt-text"
+                  }`}
+                  title="กำหนดจำนวนประโยคที่ต้องการพิมพ์ (1 - 50 ประโยค)"
+                >
+                  <SlidersHorizontal className="h-3 w-3" />
+                  <span>
+                    ปรับแต่งเอง ({sentenceCount} ประโยค)
+                  </span>
+                </button>
+
+                {showCustomSentences && (
+                  <div className="ml-1 flex items-center gap-1.5 rounded-lg bg-mt-bg px-2 py-1 ring-1 ring-mt-accent/50">
+                    <input
+                      type="number"
+                      min={SENTENCE_COUNT_LIMITS.MIN}
+                      max={SENTENCE_COUNT_LIMITS.MAX}
+                      value={customSentenceCountInput}
+                      onChange={(e) =>
+                        setCustomSentenceCountInput(e.target.value)
+                      }
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") applyCustomSentenceCount();
+                      }}
+                      className="w-16 rounded bg-mt-panel px-2 py-0.5 font-mono text-xs text-mt-text outline-none focus:ring-1 focus:ring-mt-accent"
+                      placeholder="จำนวน"
+                    />
+                    <span className="text-[11px] text-mt-muted">ประโยค</span>
                     <button
-                      key={opt.id}
                       type="button"
-                      onClick={() => setSentenceLength(opt.id)}
-                      title={opt.desc}
-                      className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                        isActive
-                          ? "bg-mt-bg/60 font-bold text-mt-accent ring-1 ring-mt-accent/40"
-                          : "text-mt-muted hover:text-mt-text"
-                      }`}
+                      onClick={applyCustomSentenceCount}
+                      className="flex items-center gap-1 rounded bg-mt-accent px-2 py-0.5 text-xs font-semibold text-mt-bg hover:opacity-90"
                     >
-                      {opt.id === "custom" && <PenLine className="h-3 w-3" />}
-                      <span>{opt.label}</span>
+                      <Check className="h-3 w-3" />
+                      <span>ตกลง</span>
                     </button>
-                  );
-                })}
+                  </div>
+                )}
 
                 <div className="mx-1 h-4 w-[1px] bg-mt-muted/30" />
 
                 <button
                   type="button"
-                  onClick={handleNextSentenceClick}
+                  onClick={onNextSentence}
                   className="flex items-center gap-1 rounded-md bg-mt-bg/60 px-2.5 py-1 text-xs font-medium text-mt-text transition-colors hover:text-mt-accent"
                 >
                   <SkipForward className="h-3.5 w-3.5" />
-                  <span>ประโยคถัดไป</span>
+                  <span>สุ่มประโยคถัดไป</span>
                 </button>
               </div>
             )}
@@ -364,7 +400,11 @@ export function SettingsPanel({
               <span>{ttsOn ? "เสียงอ่าน: เปิด" : "เสียงอ่าน: ปิด"}</span>
             </button>
 
-            <ReplayButton onClick={onReplay} disabled={!supported} />
+            <ReplayButton
+              onClick={() => onReplay()}
+              disabled={!supported}
+              label="ทดสอบ / ฟังซ้ำ"
+            />
 
             <button
               type="button"
@@ -382,108 +422,6 @@ export function SettingsPanel({
           </div>
         </div>
 
-        {/* Custom Sentence Editor Panel (visible when mode === "sentence" and sentenceLength === "custom") */}
-        {mode === "sentence" && sentenceLength === "custom" && (
-          <div className="flex flex-col gap-2.5 rounded-xl border border-mt-accent/30 bg-mt-bg/70 p-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-mt-accent">
-                <PenLine className="h-4 w-4" />
-                <span>
-                  กำหนดประโยคฝึกพิมพ์และออกเสียงด้วยตัวเอง (
-                  {lang === "th-TH" ? "ภาษาไทย" : "English"})
-                </span>
-              </div>
-              <span className="text-[11px] text-mt-muted">
-                สามารถพิมพ์ติดกันและเว้นวรรคตามจังหวะที่ต้องการให้กด Spacebar ได้เลย
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <input
-                type="text"
-                value={customSentenceDraft}
-                onChange={(e) => setCustomSentenceDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleUseCustomSentence();
-                  }
-                }}
-                placeholder={
-                  lang === "th-TH"
-                    ? "พิมพ์ประโยคภาษาไทยที่ต้องการฝึก เช่น การตั้งใจเรียนในวันนี้ คือจุดเริ่มต้นของความสำเร็จ"
-                    : "Type your custom English sentence here..."
-                }
-                className="flex-1 rounded-lg bg-mt-panel px-3 py-2 font-mono text-xs text-mt-text outline-none ring-1 ring-mt-muted/30 focus:ring-2 focus:ring-mt-accent sm:text-sm"
-              />
-
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleUseCustomSentence}
-                  className="flex items-center gap-1.5 rounded-lg bg-mt-accent px-3.5 py-2 text-xs font-bold text-mt-bg transition-transform hover:scale-[1.02]"
-                >
-                  <Check className="h-4 w-4" />
-                  <span>ใช้ประโยคนี้ฝึก</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSaveCustomSentence}
-                  title="บันทึกประโยคนี้เก็บไว้ในรายการด้านล่าง"
-                  className="flex items-center gap-1.5 rounded-lg border border-mt-accent2/40 bg-mt-panel px-3 py-2 text-xs font-semibold text-mt-accent2 transition-colors hover:bg-mt-accent2 hover:text-mt-bg"
-                >
-                  <BookmarkPlus className="h-4 w-4" />
-                  <span>บันทึกเก็บไว้</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Saved Custom Sentences List */}
-            {savedCustomList.length > 0 && (
-              <div className="flex flex-col gap-1.5 pt-1">
-                <span className="text-[11px] font-medium text-mt-muted">
-                  คลังประโยคที่คุณบันทึกไว้ (คลิกเพื่อเลือกฝึก):
-                </span>
-                <div className="flex flex-wrap items-center gap-2">
-                  {savedCustomList.map((item, idx) => {
-                    const isSelected = activeCustomSentence[lang] === item;
-                    return (
-                      <div
-                        key={`${idx}-${item}`}
-                        className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-all ${
-                          isSelected
-                            ? "border-mt-accent bg-mt-accent/15 text-mt-accent font-semibold"
-                            : "border-mt-muted/25 bg-mt-panel text-mt-text hover:border-mt-accent/50"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => setActiveCustomSentence(lang, item)}
-                          className="max-w-[260px] truncate text-left font-mono sm:max-w-[420px]"
-                          title={item}
-                        >
-                          {item}
-                        </button>
-                        {savedCustomList.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => removeCustomSentence(lang, idx)}
-                            title="ลบประโยคนี้"
-                            className="ml-1 rounded p-0.5 text-mt-muted hover:bg-mt-error/20 hover:text-mt-error"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Row 2: Language Voice Model Selector & Speed Controls (Always visible for easy access) */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-mt-bg/70 pt-2.5">
           {/* Voice / Language Model Dropdown */}
@@ -496,26 +434,31 @@ export function SettingsPanel({
               aria-label="เลือกโมเดลเสียงอ่าน"
               disabled={!supported || !ttsOn}
               value={selectedVoiceId}
-              onChange={(e) => setVoiceForLang(lang, e.target.value)}
-              className="max-w-[280px] truncate rounded-md bg-mt-bg px-2.5 py-1 text-xs text-mt-text outline-none ring-1 ring-mt-muted/30 focus:ring-mt-accent disabled:cursor-not-allowed disabled:opacity-40 sm:max-w-[340px]"
+              onChange={(e) => handleVoiceModelChange(e.target.value)}
+              className="max-w-[280px] truncate rounded-md bg-mt-bg px-2.5 py-1 text-xs text-mt-text outline-none ring-1 ring-mt-muted/30 focus:ring-mt-accent disabled:cursor-not-allowed disabled:opacity-40 sm:max-w-[350px]"
             >
-              <optgroup label="โมเดลเสียงในระบบ (System Voices)">
-                {voiceModels
-                  .filter((m) => !m.isSyntheticPreset)
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
+              <optgroup label="โมเดลเสียง Cloud AI (ใช้ได้ทุกเบราว์เซอร์ - แนะนำ)">
+                {cloudModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
               </optgroup>
-              <optgroup label="โมเดลโทนเสียงปรับแต่ง (Voice Presets)">
-                {voiceModels
-                  .filter((m) => m.isSyntheticPreset)
-                  .map((m) => (
+              {systemModels.length > 0 && (
+                <optgroup label="โมเดลเสียงในเครื่อง (System Voices)">
+                  {systemModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}
                     </option>
                   ))}
+                </optgroup>
+              )}
+              <optgroup label="โมเดลโทนเสียงปรับแต่ง (Voice Presets)">
+                {tonePresetModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
               </optgroup>
             </select>
           </div>
@@ -650,23 +593,13 @@ export function SettingsPanel({
         )}
       </div>
 
-      {/* Graceful Fallback Warnings */}
-      {!supported && (
-        <div className="flex items-center gap-2 rounded-lg border border-mt-error/40 bg-mt-error/10 px-3.5 py-2 text-xs text-mt-error">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>
-            เบราว์เซอร์ของคุณไม่รองรับระบบอ่านออกเสียง (Web Speech API)
-            แนะนำให้ใช้งานผ่าน Google Chrome หรือ Microsoft Edge
-          </span>
-        </div>
-      )}
-
+      {/* Status Info for Missing Local Thai Voice */}
       {supported && missingThaiVoice && (
         <div className="flex items-center gap-2 rounded-lg border border-mt-accent/40 bg-mt-accent/10 px-3.5 py-2 text-xs text-mt-accent">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <Sparkles className="h-4 w-4 shrink-0" />
           <span>
-            เบราว์เซอร์นี้ไม่มีเสียงไทยติดตั้งในเครื่อง แนะนำ Chrome หรือ Edge
-            (คุณยังสามารถเลือกโมเดลโทนเสียงจำลองในรายการได้)
+            ไม่พบเสียงภาษาไทยในระบบ Windows ของเครื่องนี้ — ระบบได้สลับมาใช้{" "}
+            <strong>Thai Cloud AI</strong> ให้อัตโนมัติเพื่อให้สามารถฟังเสียงภาษาไทยได้ทันที
           </span>
         </div>
       )}
